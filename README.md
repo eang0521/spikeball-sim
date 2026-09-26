@@ -1,6 +1,6 @@
 # Spikeball Sim
 
-A 3D 2-v-2 roundnet (Spikeball) simulation that plays itself. Four abstract players (a prism body with two ball "hands" floating at its sides) serve, receive, set, spike, jump and dive. As in real roundnet, sets are one-handed: there is no two-handed volleyball set. What happens is driven by a simple ball-physics engine and each player's ratings.
+A 3D 2-v-2 roundnet (Spikeball) simulation that plays itself. Four abstract players (a prism body, a sphere head and two ball "hands" floating at its sides) serve, receive, set, spike, jump and dive. As in real roundnet, sets are one-handed: there is no two-handed volleyball set. What happens is driven by a simple ball-physics engine and each player's ratings.
 
 ## Run
 

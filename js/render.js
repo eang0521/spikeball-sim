@@ -203,10 +203,15 @@
         c.fillText(String(p.idx + 1 + p.team * 2), w / 2, h / 2 + 4);
       });
       const front = new THREE.MeshStandardMaterial({ map: numTex, roughness: 0.6 });
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.44, 1.6, 0.26), [jersey, jersey, jersey, jersey, front, jersey]);
-      torso.position.y = 0.8;
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.44, 1.42, 0.26), [jersey, jersey, jersey, jersey, front, jersey]);
+      torso.position.y = 0.71;
       torso.castShadow = true;
       body.add(torso);
+
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 14), new THREE.MeshStandardMaterial({ color: 0xe0b48f, roughness: 0.7 }));
+      head.position.y = 1.58;
+      head.castShadow = true;
+      body.add(head);
 
       // hands are free-floating balls; an invisible pivot at each shoulder swings them around
       const handMat = new THREE.MeshStandardMaterial({ color: teamColor.clone().lerp(new THREE.Color(0xffffff), 0.35), roughness: 0.5 });
