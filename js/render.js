@@ -203,26 +203,18 @@
         c.fillText(String(p.idx + 1 + p.team * 2), w / 2, h / 2 + 4);
       });
       const front = new THREE.MeshStandardMaterial({ map: numTex, roughness: 0.6 });
-      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.44, 1.42, 0.26), [jersey, jersey, jersey, jersey, front, jersey]);
-      torso.position.y = 0.71;
+      const torso = new THREE.Mesh(new THREE.BoxGeometry(0.44, 1.6, 0.26), [jersey, jersey, jersey, jersey, front, jersey]);
+      torso.position.y = 0.8;
       torso.castShadow = true;
       body.add(torso);
 
-      const skin = new THREE.MeshStandardMaterial({ color: 0xe0b48f, roughness: 0.7 });
-      const head = new THREE.Mesh(new THREE.SphereGeometry(0.13, 18, 14), skin);
-      head.position.y = 1.58;
-      head.castShadow = true;
-      body.add(head);
-
+      // hands are free-floating balls; an invisible pivot at each shoulder swings them around
+      const handMat = new THREE.MeshStandardMaterial({ color: teamColor.clone().lerp(new THREE.Color(0xffffff), 0.35), roughness: 0.5 });
       const arms = [-1, 1].map((side) => {
         const pivot = new THREE.Group();
-        pivot.position.set(side * 0.28, C.SHOULDER_H, 0);
-        const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.045, 0.62, 10), jersey);
-        arm.position.y = -0.31;
-        arm.castShadow = true;
-        pivot.add(arm);
-        const hand = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 10), skin);
-        hand.position.y = -0.64;
+        pivot.position.set(side * 0.3, C.SHOULDER_H, 0);
+        const hand = new THREE.Mesh(new THREE.SphereGeometry(0.075, 16, 12), handMat);
+        hand.position.y = -0.6;
         hand.castShadow = true;
         pivot.add(hand);
         body.add(pivot);
@@ -238,7 +230,7 @@
       root.add(disc);
 
       this.scene.add(root);
-      return { root, body, torso, head, arms, disc, jersey, front, runPhase: 0, color: teamColor.getHex() };
+      return { root, body, torso, arms, disc, jersey, handMat, front, runPhase: 0, color: teamColor.getHex() };
     }
 
     refreshTeamColors() {
@@ -248,6 +240,7 @@
         if (m.color === col.getHex()) return;
         m.color = col.getHex();
         m.jersey.color.copy(col);
+        m.handMat.color.copy(col).lerp(new THREE.Color(0xffffff), 0.35);
         m.disc.material.color.copy(col);
         // redraw number texture
         const img = m.front.map.image, c = img.getContext('2d');
@@ -374,10 +367,13 @@
       const sim = this.sim, now = sim.time, b = sim.ball.p;
       const L = (x, y, z) => V3(x, y, z);
       const toBall = (side) => {
-        const sh = V3(side * 0.28, C.SHOULDER_H, 0);
+        const sh = V3(side * 0.3, C.SHOULDER_H, 0);
         m.body.localToWorld(sh);
         return V3(b.x - sh.x, b.y - sh.y, b.z - sh.z);
       };
+      // one-handed touches use whichever hand is on the ball's side
+      const pair = (side, active, activeWorld, rest) =>
+        side < 0 ? { dirs: [active, rest], world: [activeWorld, false] } : { dirs: [rest, active], world: [false, activeWorld] };
 
       if (p.celebrate === 'win') {
         const w = Math.sin(now * 12) * 0.25;
@@ -401,7 +397,10 @@
           const follow = d.clone().add(V3(0, -0.6, 0));
           return { dirs: [L(-0.2, -0.4, 0.8), follow], world: [false, true], fast: true };
         }
-        if (lc.kind === 'set') return { dirs: [d.clone().add(V3(0, 0.4, 0)), d.clone().add(V3(0, 0.4, 0))], world: [true, true], fast: true };
+        if (lc.kind === 'set') {
+          const side = m.setSide || 1;
+          return Object.assign(pair(side, d.clone().add(V3(0, 0.5, 0)), true, L(-side * 0.35, -0.8, 0.4)), { fast: true });
+        }
         return { dirs: [d, d.clone()], world: [true, true], fast: true };
       }
 
@@ -418,7 +417,12 @@
               fast: !cock,
             };
           }
-          if (plan.kind === 'set') return { dirs: [toBall(-1), toBall(1)], world: [true, true] };
+          if (plan.kind === 'set') {
+            // roundnet has no two-handed sets: pop it up with one hand
+            const local = m.body.worldToLocal(V3(b.x, b.y, b.z));
+            m.setSide = local.x >= 0 ? 1 : -1;
+            return pair(m.setSide, toBall(m.setSide), true, L(-m.setSide * 0.35, -0.8, 0.4));
+          }
           // pass: platform, hands together below the ball
           const tb = toBall(0);
           tb.y = Math.min(-0.45 * Math.hypot(tb.x, tb.z), tb.y);
