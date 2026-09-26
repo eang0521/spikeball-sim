@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Spikeball Sim</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app">
+    <main id="stage">
+      <div id="view"></div>
+
+      <div id="scoreboard">
+        <div class="team" data-team="0">
+          <span class="serve-dot" title="Serving"></span>
+          <span class="tname"></span>
+          <span class="tscore">0</span>
+        </div>
+        <div class="sb-mid">
+          <div class="to">to <span id="sb-to">21</span></div>
+          <div id="sb-serve"></div>
+        </div>
+        <div class="team" data-team="1">
+          <span class="tscore">0</span>
+          <span class="tname"></span>
+          <span class="serve-dot" title="Serving"></span>
+        </div>
+      </div>
+
+      <div id="toast"></div>
+
+      <div id="gameover" hidden>
+        <div class="go-card">
+          <div class="go-title"></div>
+          <div class="go-score"></div>
+          <div class="go-sub">Next game starts automatically</div>
+          <button id="go-next" class="btn primary">Next game now</button>
+        </div>
+      </div>
+
+      <div id="controls">
+        <button id="btn-play" class="btn icon" title="Pause / play (Space)">&#10074;&#10074;</button>
+        <div class="seg" id="seg-speed" title="Speed (1-5)">
+          <button data-v="0.25">¼×</button>
+          <button data-v="0.5">½×</button>
+          <button data-v="1" class="on">1×</button>
+          <button data-v="2">2×</button>
+          <button data-v="4">4×</button>
+        </div>
+        <div class="seg" id="seg-cam" title="Camera (C)">
+          <button data-v="broadcast" class="on">Broadcast</button>
+          <button data-v="follow">Follow</button>
+          <button data-v="overhead">Overhead</button>
+          <button data-v="auto">Cinematic</button>
+          <button data-v="orbit">Free</button>
+        </div>
+        <label class="sel">Game to
+          <select id="sel-to">
+            <option value="11">11</option>
+            <option value="15">15</option>
+            <option value="21" selected>21</option>
+          </select>
+        </label>
+        <button id="btn-new" class="btn">New game</button>
+      </div>
+    </main>
+
+    <aside id="panel">
+      <nav id="tabs">
+        <button data-tab="feed" class="on">Play-by-play</button>
+        <button data-tab="box">Box score</button>
+        <button data-tab="players">Players</button>
+        <button data-tab="batch">Batch sim</button>
+      </nav>
+
+      <section id="tab-feed" class="tab on">
+        <ol id="feed"></ol>
+      </section>
+
+      <section id="tab-box" class="tab">
+        <div id="box"></div>
+        <div id="rally-summary"></div>
+        <p class="hint">PTS = kills + aces · K = kills · ACE = aces · HIT% = (kills − hitting errors) ÷ attempts · DIG = successful digs / attempts · REC = clean serve receives / serves received · SE = serve faults · ERR = all errors</p>
+      </section>
+
+      <section id="tab-players" class="tab">
+        <div class="row-actions">
+          <button class="btn" id="pr-default">Default roster</button>
+          <button class="btn" id="pr-random">Randomize all</button>
+          <button class="btn" id="pr-even">All 70</button>
+        </div>
+        <p class="hint">Changes apply live to the current game.</p>
+        <div id="roster"></div>
+      </section>
+
+      <section id="tab-batch" class="tab">
+        <p class="hint">Simulate many games instantly with the current roster (no rendering).</p>
+        <div class="row-actions">
+          <label class="sel">Games
+            <select id="batch-n">
+              <option>10</option>
+              <option selected>50</option>
+              <option>100</option>
+              <option>250</option>
+              <option>500</option>
+            </select>
+          </label>
+          <label class="sel">To
+            <select id="batch-to">
+              <option>11</option>
+              <option>15</option>
+              <option selected>21</option>
+            </select>
+          </label>
+          <button class="btn primary" id="batch-run">Run</button>
+        </div>
+        <div id="batch-progress" hidden><div class="bar"><div></div></div><span></span></div>
+        <div id="batch-out"></div>
+      </section>
+    </aside>
+  </div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="js/util.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/batch.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
