@@ -5,6 +5,32 @@
   const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
   const DOWN = V3(0, -1, 0);
 
+  // Animation clip names are guessed from common conventions (including Pokémon
+  // game rips: wait01, run01, attack01, down01…) unless a roster maps them explicitly.
+  const CLIP_GUESS = {
+    idle: [/idle/i, /wait/i, /stand/i],
+    run: [/run/i, /walk/i, /move/i],
+    jump: [/jump/i, /hop/i],
+    attack: [/attack/i, /punch/i, /strike/i, /hit/i],
+    dive: [/dive/i, /down/i, /faint/i, /fall/i, /damage/i],
+    celebrate: [/win|victory/i, /happy|joy|cheer|dance/i, /wave|yes|thumb/i],
+  };
+  const ONE_SHOT = { attack: true, jump: true, dive: true };
+
+  function resolveClips(anims, map = {}) {
+    const out = {};
+    for (const key in CLIP_GUESS) {
+      let clip = map[key] ? anims.find((a) => a.name === map[key]) : null;
+      for (const re of CLIP_GUESS[key]) {
+        if (clip) break;
+        clip = anims.find((a) => re.test(a.name));
+      }
+      if (clip) out[key] = clip;
+    }
+    if (!out.idle) out.idle = anims[0];
+    return out;
+  }
+
   function canvasTex(w, h, draw) {
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
@@ -56,6 +82,7 @@
       this.buildNet();
       this.buildBall();
       this.players = sim.players.map((p) => this.buildPlayer(p));
+      sim.players.forEach((p, i) => this.loadModel(p, this.players[i]));
       this.labels = sim.players.map(() => {
         const d = document.createElement('div');
         d.className = 'plabel';
@@ -235,7 +262,91 @@
       root.add(disc);
 
       this.scene.add(root);
-      return { root, body, torso, arms, disc, jersey, handMat, front, runPhase: 0, color: teamColor.getHex() };
+      return { root, body, torso, head, arms, disc, jersey, handMat, front, runPhase: 0, color: teamColor.getHex() };
+    }
+
+    notice(msg) {
+      console.warn(msg);
+      if (this.onNotice) this.onNotice(msg);
+    }
+
+    // Replace the prism with a glTF model if the roster gives one:
+    // def.model = { url, height (m), yaw (deg), hands (bool), anims: { idle: 'clipName', … } }
+    loadModel(p, m) {
+      const cfg = p.def.model;
+      if (!cfg || !cfg.url) return;
+      if (!THREE.GLTFLoader) { this.notice('glTF loader unavailable; using prism players'); return; }
+      this.loader = this.loader || new THREE.GLTFLoader();
+      this.loader.load(cfg.url, (gltf) => {
+        const model = gltf.scene;
+        model.traverse((o) => {
+          if (!o.isMesh) return;
+          o.castShadow = true;
+          o.frustumCulled = false; // skinned meshes often have stale bounds
+          for (const mat of [].concat(o.material)) {
+            // exported rips often come out fully metallic, which renders black without an env map
+            if (mat && mat.metalness !== undefined) mat.metalness = Math.min(mat.metalness, 0.15);
+          }
+        });
+        const height = cfg.height || 1.6;
+        const box = new THREE.Box3().setFromObject(model);
+        const size = box.getSize(new THREE.Vector3());
+        model.scale.multiplyScalar(height / (size.y || 1));
+        box.setFromObject(model);
+        const c = box.getCenter(new THREE.Vector3());
+        model.position.x -= c.x;
+        model.position.z -= c.z;
+        model.position.y -= box.min.y;
+        const holder = new THREE.Group();
+        holder.rotation.y = ((cfg.yaw || 0) * Math.PI) / 180;
+        holder.add(model);
+        m.body.add(holder);
+        m.torso.visible = false;
+        m.head.visible = false;
+        const halfW = Math.max(size.x, size.z) * (height / (size.y || 1)) * 0.5;
+        m.arms.forEach((a, i) => {
+          a.visible = cfg.hands !== false;
+          a.position.x = (i ? 1 : -1) * U.clamp(halfW * 0.7 + 0.08, 0.3, 0.6);
+        });
+        m.model = { holder, height };
+        if (gltf.animations.length) {
+          m.mixer = new THREE.AnimationMixer(model);
+          m.clips = resolveClips(gltf.animations, cfg.anims);
+          m.clipKey = null;
+        }
+      }, undefined, () => this.notice(`Couldn't load the model for ${p.name} (${cfg.url}); using a prism instead.`));
+    }
+
+    playClip(m, key, timeScale) {
+      let clip = m.clips[key];
+      if (!clip) {
+        if (ONE_SHOT[key] && m.clipKey) return; // no clip for it: keep whatever is playing
+        key = 'idle';
+        clip = m.clips.idle;
+      }
+      const action = m.mixer.clipAction(clip);
+      action.timeScale = timeScale;
+      if (m.clipKey === key) return;
+      const prev = m.clipKey && m.mixer.clipAction(m.clips[m.clipKey]);
+      action.reset();
+      action.setLoop(ONE_SHOT[key] ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
+      action.clampWhenFinished = !!ONE_SHOT[key];
+      action.fadeIn(0.12).play();
+      if (prev && prev !== action) prev.fadeOut(0.12);
+      m.clipKey = key;
+    }
+
+    animateModel(p, m, speed, dt) {
+      if (!m.mixer) return;
+      const now = this.sim.time, lc = p.lastContact, plan = p.plan;
+      let key = 'idle', ts = 1;
+      if (p.celebrate === 'win') key = 'celebrate';
+      else if (p.state === 'dive' || p.state === 'down') key = 'dive';
+      else if ((lc && now - lc.t < 0.35) || (plan && plan.kind === 'hit' && plan.t - now < 0.25)) key = 'attack';
+      else if (p.y > 0.05) key = 'jump';
+      else if (speed > 0.8) { key = 'run'; ts = U.clamp(speed / 4, 0.6, 1.8); }
+      this.playClip(m, key, ts);
+      m.mixer.update(dt);
     }
 
     refreshTeamColors() {
@@ -347,9 +458,16 @@
       }
       m.body.rotation.x = U.lerp(m.body.rotation.x, pitch, Math.min(1, dt * 14));
       m.body.rotation.z = U.lerp(m.body.rotation.z, roll, Math.min(1, dt * 14));
-      m.body.position.y = U.lerp(m.body.position.y, -crouch, Math.min(1, dt * 12));
-
       m.runPhase += speed * dt * 2.4;
+      if (m.model) {
+        // models squash instead of sinking into the ground, and bob when they have no run clip
+        const bob = !m.mixer && speed > 1.2 ? Math.abs(Math.sin(m.runPhase)) * 0.06 : 0;
+        m.body.scale.y = U.lerp(m.body.scale.y, 1 - crouch * 0.9, Math.min(1, dt * 12));
+        m.body.position.y = bob;
+        this.animateModel(p, m, speed, dt);
+      } else {
+        m.body.position.y = U.lerp(m.body.position.y, -crouch, Math.min(1, dt * 12));
+      }
       m.disc.visible = p.y < 0.05;
       m.body.updateMatrixWorld(true);
 
@@ -475,7 +593,8 @@
       const v = new THREE.Vector3();
       this.sim.players.forEach((p, i) => {
         const el = this.labels[i];
-        v.set(p.pos.x, 2.0 + p.y, p.pos.z).project(this.camera);
+        const m = this.players[i];
+        v.set(p.pos.x, Math.max(2.0, m.model ? m.model.height + 0.3 : 0) + p.y, p.pos.z).project(this.camera);
         if (v.z > 1) { el.style.display = 'none'; return; }
         el.style.display = '';
         el.style.transform = `translate(-50%, -100%) translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px)`;

@@ -188,6 +188,7 @@
           pc.className = 'pcard';
           pc.innerHTML = `<div class="pcard-head">
               <input type="text" value="${esc(pl.name)}" maxlength="16" aria-label="Player name">
+              ${pl.tag ? `<span class="ptag">${esc(pl.tag)}</span>` : ''}
               <span class="ovr"></span>
               <button class="btn" title="Random stats">Random</button>
             </div>` + SB.STATS.map((d) => `<div class="stat-row" title="${esc(d.desc)}">

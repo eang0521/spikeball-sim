@@ -25,4 +25,16 @@ Then go to http://localhost:8765. Three.js loads from a CDN, so you need an inte
 | `js/render.js` | Three.js scene, player animation and cameras. |
 | `js/ui.js`, `js/main.js`, `js/batch.js` | Scoreboard, play-by-play, box score, the live roster editor (saved in localStorage) and batch simulation. |
 
+## Custom rosters and 3D models
+
+A script loaded before `js/main.js` can set `SB.MODE = { defaultRoster, title, storageKey }` to supply its own roster. Any player in a roster can use a glTF model in place of the prism:
+
+```js
+{ name: 'Robo', stats: { ... }, tag: 'optional subtitle',
+  model: { url: 'models/robo.glb', height: 1.5, yaw: 0, hands: true,
+           anims: { idle: 'Idle', run: 'Running', jump: 'Jump', attack: 'Punch', dive: 'Death', celebrate: 'Dance' } } }
+```
+
+Models are scaled to `height` and centred on the player. The `yaw` value (in degrees) fixes models that face the wrong way. Animation clips are matched by name when `anims` is left out. Models without clips get simple procedural motion (lean, bob, squash). The floating ball hands stay on by default so touches remain readable.
+
 The simulation core (`util`, `config`, `physics`, `player`, `ai`, `game`) has no DOM dependency, so it also runs headless under Node.

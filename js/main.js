@@ -3,19 +3,28 @@
   'use strict';
   const $ = (s, el = document) => el.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
-  const STORE = 'spikeball-sim-roster-v1';
+  // A mode script loaded before this file can set SB.MODE to swap the default
+  // roster (including 3D models), page title and storage key.
+  const MODE = SB.MODE || {};
+  const STORE = MODE.storageKey || 'spikeball-sim-roster-v1';
+  const defaultRoster = MODE.defaultRoster || SB.defaultRoster;
 
   function loadRoster() {
     try {
       const r = JSON.parse(localStorage.getItem(STORE));
       if (r && r.teams && r.teams.length === 2 && r.teams.every((t) => t.players && t.players.length === 2)) {
-        const def = SB.defaultRoster();
-        // fill any stats added since the roster was saved
-        r.teams.forEach((t, i) => t.players.forEach((p, j) => { p.stats = Object.assign({}, def.teams[i].players[j].stats, p.stats); }));
+        const def = defaultRoster();
+        r.teams.forEach((t, i) => t.players.forEach((p, j) => {
+          const d = def.teams[i].players[j];
+          // fill any stats added since the roster was saved; models always come from the mode file
+          p.stats = Object.assign({}, d.stats, p.stats);
+          p.model = d.model;
+          p.tag = d.tag;
+        }));
         return r;
       }
     } catch (e) { /* storage unavailable */ }
-    return SB.defaultRoster();
+    return defaultRoster();
   }
   function saveRoster(r) {
     try { localStorage.setItem(STORE, JSON.stringify(r)); } catch (e) { /* ignore */ }
@@ -81,9 +90,11 @@
       document.body.innerHTML = '<p style="padding:24px">Could not load Three.js from the CDN. Check your internet connection and reload.</p>';
       return;
     }
+    if (MODE.title) document.title = MODE.title;
     app.sim = app.makeSim();
-    app.renderer = new SB.Renderer($('#view'), app.sim);
     app.ui = new SB.UI(app);
+    app.renderer = new SB.Renderer($('#view'), app.sim);
+    app.renderer.onNotice = (msg) => app.ui.addLine('fault', msg.replace(/[<>&]/g, ''));
     app.ui.onEvent({ type: 'newGame' });
     bindControls();
 
@@ -124,7 +135,7 @@
     $('#go-next').addEventListener('click', app.newGame);
     $('#sel-to').addEventListener('change', () => { app.sim.gameTo = +$('#sel-to').value; app.ui.lastScoreKey = ''; });
 
-    $('#pr-default').addEventListener('click', () => app.setRoster(SB.defaultRoster()));
+    $('#pr-default').addEventListener('click', () => app.setRoster(defaultRoster()));
     $('#pr-random').addEventListener('click', () => {
       const rng = SB.U.makeRng(Date.now());
       const r = SB.cloneRoster(app.roster);
