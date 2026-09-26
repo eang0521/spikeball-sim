@@ -17,6 +17,34 @@
   };
   const ONE_SHOT = { attack: true, jump: true, dive: true };
 
+  // Trim transparent padding so sprites stand on the ground and scale by their visible height.
+  function cropToContent(img) {
+    const c = document.createElement('canvas');
+    c.width = img.naturalWidth;
+    c.height = img.naturalHeight;
+    const g = c.getContext('2d');
+    g.drawImage(img, 0, 0);
+    let data;
+    try { data = g.getImageData(0, 0, c.width, c.height).data; } catch (e) { return c; }
+    let x0 = c.width, y0 = c.height, x1 = -1, y1 = -1;
+    for (let y = 0; y < c.height; y++) {
+      for (let x = 0; x < c.width; x++) {
+        if (data[(y * c.width + x) * 4 + 3] > 24) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    if (x1 < 0) return c;
+    const out = document.createElement('canvas');
+    out.width = x1 - x0 + 1;
+    out.height = y1 - y0 + 1;
+    out.getContext('2d').drawImage(c, x0, y0, out.width, out.height, 0, 0, out.width, out.height);
+    return out;
+  }
+
   function resolveClips(anims, map = {}) {
     const out = {};
     for (const key in CLIP_GUESS) {
@@ -82,7 +110,12 @@
       this.buildNet();
       this.buildBall();
       this.players = sim.players.map((p) => this.buildPlayer(p));
-      sim.players.forEach((p, i) => this.loadModel(p, this.players[i]));
+      // look chain: 3D model -> 2D sprite -> prism
+      sim.players.forEach((p, i) => {
+        const m = this.players[i];
+        if (p.def.model && p.def.model.url) this.loadModel(p, m, () => this.loadSprite(p, m));
+        else this.loadSprite(p, m);
+      });
       this.labels = sim.players.map(() => {
         const d = document.createElement('div');
         d.className = 'plabel';
@@ -272,7 +305,7 @@
 
     // Replace the prism with a glTF model if the roster gives one:
     // def.model = { url, height (m), yaw (deg), hands (bool), anims: { idle: 'clipName', … } }
-    loadModel(p, m) {
+    loadModel(p, m, onFail) {
       const cfg = p.def.model;
       if (!cfg || !cfg.url) return;
       if (!THREE.GLTFLoader) { this.notice('glTF loader unavailable; using prism players'); return; }
@@ -309,12 +342,91 @@
           a.position.x = (i ? 1 : -1) * U.clamp(halfW * 0.7 + 0.08, 0.3, 0.6);
         });
         m.model = { holder, height };
+        m.figureH = height;
         if (gltf.animations.length) {
           m.mixer = new THREE.AnimationMixer(model);
           m.clips = resolveClips(gltf.animations, cfg.anims);
           m.clipKey = null;
         }
-      }, undefined, () => this.notice(`Couldn't load the model for ${p.name} (${cfg.url}); using a prism instead.`));
+      }, undefined, () => {
+        const next = p.def.sprite && p.def.sprite.url ? 'its sprite' : 'a prism';
+        this.notice(`Couldn't load the model for ${p.name} (${cfg.url}); using ${next} instead.`);
+        if (onFail) onFail();
+      });
+    }
+
+    // Replace the prism with a camera-facing 2D sprite:
+    // def.sprite = { url, height (m), facesLeft (bool, default true), hands (bool) }
+    loadSprite(p, m) {
+      const cfg = p.def.sprite;
+      if (!cfg || !cfg.url) return;
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const tex = new THREE.CanvasTexture(cropToContent(img));
+        tex.encoding = THREE.sRGBEncoding;
+        const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, alphaTest: 0.2 }));
+        spr.center.set(0.5, 0); // stand on the ground
+        const h = cfg.height || 1.4;
+        const w = (h * tex.image.width) / tex.image.height;
+        spr.scale.set(w, h, 1);
+        m.root.add(spr);
+
+        const blob = new THREE.Mesh(
+          new THREE.CircleGeometry(Math.min(0.45, w * 0.4), 24),
+          new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })
+        );
+        blob.rotation.x = -Math.PI / 2;
+        blob.position.y = 0.004;
+        m.root.add(blob);
+
+        m.torso.visible = false;
+        m.head.visible = false;
+        m.arms.forEach((a, i) => {
+          a.visible = cfg.hands !== false;
+          a.position.x = (i ? 1 : -1) * U.clamp(w * 0.38 + 0.06, 0.3, 0.6);
+        });
+        m.sprite = { spr, blob, w, h, facesLeft: cfg.facesLeft !== false, flip: 1, rot: 0 };
+        m.figureH = h;
+      };
+      img.onerror = () => this.notice(`Couldn't load the sprite for ${p.name} (${cfg.url}); using a prism instead.`);
+      img.src = cfg.url;
+    }
+
+    // Code-driven motion for sprites: flip toward travel, bob, squash, dive, celebrate.
+    animateSprite(p, m, speed, crouch, dt) {
+      const S = m.sprite, now = this.sim.time;
+      const camRight = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+      let dx = p.vel.x, dz = p.vel.z;
+      if (speed < 0.6) { dx = Math.sin(p.facing); dz = Math.cos(p.facing); }
+      const right = dx * camRight.x + dz * camRight.z;
+      if (Math.abs(right) > 0.2) S.flip = (right > 0) === S.facesLeft ? -1 : 1;
+
+      let sx = 1 + crouch * 0.7, sy = 1 - crouch * 1.3, rot = 0, y = 0;
+      if (speed > 1.2) y = Math.abs(Math.sin(m.runPhase)) * 0.08;
+      const lc = p.lastContact;
+      if (lc && now - lc.t < 0.25) {
+        const k = 1 - (now - lc.t) / 0.25;
+        sy += 0.14 * k;
+        sx -= 0.08 * k;
+        const r = lc.dir.x * camRight.x + lc.dir.z * camRight.z;
+        rot = -Math.sign(r) * 0.25 * k;
+      }
+      if (p.state === 'dive' || p.state === 'down') {
+        const k = p.state === 'dive' ? U.clamp(p.stateT / 0.2, 0, 1) : U.clamp(1 - (p.stateT - p.diveRecover * 0.6) / (p.diveRecover * 0.4), 0, 1);
+        const r = p.diveDir.x * camRight.x + p.diveDir.z * camRight.z;
+        rot = -(r >= 0 ? 1 : -1) * 1.35 * k;
+        sy = 1;
+        sx = 1;
+      }
+      if (p.celebrate === 'win') { y = Math.abs(Math.sin(now * 9 + p.id)) * 0.25; rot = Math.sin(now * 9 + p.id) * 0.12; }
+      else if (p.celebrate === 'lose') sy *= 0.93;
+
+      S.rot = U.lerp(S.rot, rot, Math.min(1, dt * 14));
+      S.spr.material.rotation = S.rot;
+      S.spr.scale.set(S.w * sx * S.flip, S.h * sy, 1);
+      S.spr.position.y = y;
+      S.blob.visible = p.y < 0.05 && y < 0.2;
     }
 
     playClip(m, key, timeScale) {
@@ -467,6 +579,7 @@
         this.animateModel(p, m, speed, dt);
       } else {
         m.body.position.y = U.lerp(m.body.position.y, -crouch, Math.min(1, dt * 12));
+        if (m.sprite) this.animateSprite(p, m, speed, crouch, dt);
       }
       m.disc.visible = p.y < 0.05;
       m.body.updateMatrixWorld(true);
@@ -594,7 +707,7 @@
       this.sim.players.forEach((p, i) => {
         const el = this.labels[i];
         const m = this.players[i];
-        v.set(p.pos.x, Math.max(2.0, m.model ? m.model.height + 0.3 : 0) + p.y, p.pos.z).project(this.camera);
+        v.set(p.pos.x, Math.max(2.0, (m.figureH || 0) + 0.3) + p.y, p.pos.z).project(this.camera);
         if (v.z > 1) { el.style.display = 'none'; return; }
         el.style.display = '';
         el.style.transform = `translate(-50%, -100%) translate(${((v.x + 1) / 2) * w}px, ${((1 - v.y) / 2) * h}px)`;

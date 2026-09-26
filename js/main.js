@@ -16,10 +16,11 @@
         const def = defaultRoster();
         r.teams.forEach((t, i) => t.players.forEach((p, j) => {
           const d = def.teams[i].players[j];
-          // fill any stats added since the roster was saved; models always come from the mode file
+          // fill any stats added since the roster was saved; models and sprites always come from the mode file
           p.stats = Object.assign({}, d.stats, p.stats);
           p.model = d.model;
           p.tag = d.tag;
+          p.sprite = d.sprite;
         }));
         return r;
       }

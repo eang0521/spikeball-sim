@@ -35,6 +35,8 @@ A script loaded before `js/main.js` can set `SB.MODE = { defaultRoster, title, s
            anims: { idle: 'Idle', run: 'Running', jump: 'Jump', attack: 'Punch', dive: 'Death', celebrate: 'Dance' } } }
 ```
 
+A player can use a flat 2D sprite instead, with `sprite: { url: 'sprites/robo.png', height: 1.4, facesLeft: true }`. The sprite faces the camera and flips toward its direction of travel. It gets code-driven motion (bob, squash, dive, celebrate), and its transparent padding is trimmed automatically. The image has to be served from the same site: WebGL can't use cross-origin images unless the host sends CORS headers. The page tries the model first, then the sprite, then falls back to the prism.
+
 Models are scaled to `height` and centred on the player. The `yaw` value (in degrees) fixes models that face the wrong way. Animation clips are matched by name when `anims` is left out. Models without clips get simple procedural motion (lean, bob, squash). The floating ball hands stay on by default so touches remain readable.
 
 The simulation core (`util`, `config`, `physics`, `player`, `ai`, `game`) has no DOM dependency, so it also runs headless under Node.
